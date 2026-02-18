@@ -1,0 +1,397 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guild Glory AI Overseer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;700&display=swap');
+        
+        body {
+            background-color: #050505;
+            color: #00ff99;
+            font-family: 'Fira Code', monospace;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        .crt::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 50;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        .scanline {
+            width: 100%;
+            height: 100px;
+            z-index: 51;
+            background: linear-gradient(0deg, rgba(0, 0, 0, 0) 0%, rgba(0, 255, 153, 0.1) 50%, rgba(0, 0, 0, 0) 100%);
+            opacity: 0.1;
+            position: fixed;
+            bottom: 100%;
+            animation: scanline 10s linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes scanline {
+            0% { bottom: 100%; }
+            80% { bottom: 100%; }
+            100% { bottom: -100px; }
+        }
+
+        .neon-border {
+            box-shadow: 0 0 10px #00ff99, inset 0 0 5px #00ff99;
+        }
+
+        .neon-text {
+            text-shadow: 0 0 5px #00ff99, 0 0 10px #00ff99;
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #000;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #00ff99;
+            border-radius: 10px;
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom": "https://esm.sh/react-dom@18.2.0",
+        "@google/genai": "https://esm.sh/@google/genai@1.40.0"
+      }
+    }
+    </script>
+</head>
+<body class="crt">
+    <div id="root"></div>
+    <div class="scanline"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import ReactDOM from 'react-dom';
+        import { GoogleGenAI, Type } from "@google/genai";
+
+        // --- Types & Constants ---
+        const AppState = {
+            SETUP: 'SETUP',
+            CONNECTING: 'CONNECTING',
+            DASHBOARD: 'DASHBOARD'
+        };
+
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+
+        // --- Services ---
+        const getTacticalBriefing = async (uid, country) => {
+            try {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-3-flash-preview',
+                    contents: `Generate a cyberpunk tactical briefing for a gaming guild with UID: ${uid} located in ${country}. 
+                               The briefing should sound like an advanced AI overseer analyzing performance and competition.`,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: Type.OBJECT,
+                            properties: {
+                                summary: { type: Type.STRING, description: 'A brief tactical overview.' },
+                                recommendations: { 
+                                    type: Type.ARRAY, 
+                                    items: { type: Type.STRING },
+                                    description: '3 tactical recommendations for the guild.' 
+                                },
+                                threatLevel: { 
+                                    type: Type.STRING, 
+                                    enum: ['Low', 'Medium', 'High', 'Critical'] 
+                                }
+                            },
+                            required: ['summary', 'recommendations', 'threatLevel']
+                        }
+                    }
+                });
+                return JSON.parse(response.text || '{}');
+            } catch (error) {
+                console.error("Gemini Error:", error);
+                return {
+                    summary: "AI analysis failed. Reverting to local heuristic data. Regional servers indicate high volatility.",
+                    recommendations: ["Optimize rotation patterns", "Calibrate sensitivity", "Coordinate flanking"],
+                    threatLevel: 'Medium'
+                };
+            }
+        };
+
+        const chatWithOverseer = async (message) => {
+            try {
+                const chat = ai.chats.create({
+                    model: 'gemini-3-flash-preview',
+                    config: {
+                        systemInstruction: 'You are the GIULD GLORY OVERSEER, a high-tech AI system managing a gaming guild. Speak in a concise, tactical, and cyberpunk-inspired tone.'
+                    }
+                });
+                const response = await chat.sendMessage({ message });
+                return response.text;
+            } catch (err) {
+                return "COMMUNICATION RELAY ERROR: UNAUTHORIZED FREQUENCY.";
+            }
+        };
+
+        // --- Components ---
+        const Terminal = ({ logs, height = "h-64" }) => {
+            const terminalEndRef = useRef(null);
+            useEffect(() => {
+                terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [logs]);
+
+            const getColor = (type) => {
+                switch (type) {
+                    case 'success': return 'text-green-400';
+                    case 'error': return 'text-red-500';
+                    case 'warning': return 'text-yellow-400';
+                    default: return 'text-emerald-500';
+                }
+            };
+
+            return (
+                <div className={`${height} bg-black/80 border border-emerald-500/30 p-4 font-mono text-xs md:text-sm overflow-y-auto rounded relative`}>
+                    <div className="absolute top-2 right-2 flex space-x-1">
+                        <div className="w-2 h-2 rounded-full bg-red-500/50"></div>
+                        <div className="w-2 h-2 rounded-full bg-yellow-500/50"></div>
+                        <div className="w-2 h-2 rounded-full bg-green-500/50"></div>
+                    </div>
+                    {logs.map((log, idx) => (
+                        <div key={idx} className="mb-1">
+                            <span className="opacity-50">[{log.timestamp}]</span>{' '}
+                            <span className={getColor(log.type)}>{log.message}</span>
+                        </div>
+                    ))}
+                    <div ref={terminalEndRef} />
+                </div>
+            );
+        };
+
+        const GuildDashboard = ({ guild }) => {
+            const [analysis, setAnalysis] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [chatInput, setChatInput] = useState('');
+            const [chatLogs, setChatLogs] = useState([]);
+            const [isTyping, setIsTyping] = useState(false);
+
+            useEffect(() => {
+                const init = async () => {
+                    const data = await getTacticalBriefing(guild.uid, guild.country);
+                    setAnalysis(data);
+                    setLoading(false);
+                    setChatLogs([{
+                        message: "OVERSEER ONLINE. ANALYSIS COMPLETE.",
+                        timestamp: new Date().toLocaleTimeString(),
+                        type: 'success'
+                    }]);
+                };
+                init();
+            }, [guild]);
+
+            const handleChat = async (e) => {
+                e.preventDefault();
+                if (!chatInput.trim() || isTyping) return;
+                const userMsg = {
+                    message: `USER: ${chatInput}`,
+                    timestamp: new Date().toLocaleTimeString(),
+                    type: 'info'
+                };
+                setChatLogs(prev => [...prev, userMsg]);
+                setChatInput('');
+                setIsTyping(true);
+                const aiResponse = await chatWithOverseer(chatInput);
+                setChatLogs(prev => [...prev, {
+                    message: `OVERSEER: ${aiResponse}`,
+                    timestamp: new Date().toLocaleTimeString(),
+                    type: 'success'
+                }]);
+                setIsTyping(false);
+            };
+
+            if (loading) {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-screen space-y-4">
+                        <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                        <p className="text-emerald-500 animate-pulse tracking-widest">RUNNING HEURISTICS...</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-6 animate-fade-in">
+                    <header className="flex flex-col md:flex-row justify-between items-center border-b border-emerald-500/30 pb-4">
+                        <div className="text-left">
+                            <h1 className="text-3xl font-bold neon-text tracking-widest uppercase">Guild Dashboard</h1>
+                            <p className="text-sm opacity-60">UID: {guild.uid} | Sector: {guild.country}</p>
+                        </div>
+                        <div className="flex space-x-4 mt-4 md:mt-0">
+                            <div className="px-4 py-2 bg-emerald-900/20 border border-emerald-500/50 rounded flex items-center space-x-2">
+                                <i className="fas fa-microchip animate-pulse"></i>
+                                <span className="text-xs font-bold uppercase">AI: Active</span>
+                            </div>
+                            <div className="px-4 py-2 bg-red-900/20 border border-red-500/50 rounded flex items-center space-x-2">
+                                <i className="fas fa-radiation"></i>
+                                <span className="text-xs font-bold uppercase">Threat: {analysis?.threatLevel}</span>
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-1 space-y-6">
+                            <div className="p-4 bg-emerald-900/10 border border-emerald-500/30 rounded-lg">
+                                <h2 className="text-lg font-bold mb-3 border-b border-emerald-500/20 pb-1 flex items-center gap-2">
+                                    <i className="fas fa-chart-line"></i> Tactical Summary
+                                </h2>
+                                <p className="text-sm leading-relaxed text-emerald-100 italic">"{analysis?.summary}"</p>
+                            </div>
+                            <div className="p-4 bg-emerald-900/10 border border-emerald-500/30 rounded-lg">
+                                <h2 className="text-lg font-bold mb-3 border-b border-emerald-500/20 pb-1 flex items-center gap-2">
+                                    <i className="fas fa-list-check"></i> Recommendations
+                                </h2>
+                                <ul className="space-y-3">
+                                    {analysis?.recommendations.map((rec, i) => (
+                                        <li key={i} className="flex items-start gap-2 text-sm">
+                                            <span className="text-emerald-500 font-bold">{i + 1}.</span>
+                                            <span>{rec}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                        <div className="lg:col-span-2 space-y-6">
+                            <div className="flex flex-col h-[400px] md:h-[500px]">
+                                <Terminal logs={chatLogs} height="flex-grow" />
+                                <form onSubmit={handleChat} className="mt-4 flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={chatInput}
+                                        onChange={(e) => setChatInput(e.target.value)}
+                                        placeholder="Command AI Overseer..."
+                                        className="flex-grow bg-black border border-emerald-500/50 p-3 rounded text-emerald-400 placeholder:text-emerald-900 focus:outline-none focus:border-emerald-400"
+                                    />
+                                    <button 
+                                        type="submit"
+                                        disabled={isTyping}
+                                        className="bg-emerald-600 hover:bg-emerald-500 text-black font-bold px-6 py-2 rounded transition-all disabled:opacity-50"
+                                    >
+                                        SEND
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [currentState, setCurrentState] = useState(AppState.SETUP);
+            const [guildInfo, setGuildInfo] = useState({ uid: '', country: 'Global' });
+            const [logs, setLogs] = useState([]);
+            const [progress, setProgress] = useState(0);
+
+            const addLog = (message, type = 'info') => {
+                setLogs(prev => [...prev, {
+                    message,
+                    timestamp: new Date().toLocaleTimeString(),
+                    type
+                }]);
+            };
+
+            const handleStart = () => {
+                if (!guildInfo.uid) return alert("ENTER GUILD UID");
+                setCurrentState(AppState.CONNECTING);
+                runBoot();
+            };
+
+            const runBoot = async () => {
+                const steps = [
+                    "INITIALIZING UPLINK...", "SCANNING SECTORS...", "CONNECTING TO GEMINI CORE...",
+                    "BYPASSING ENCRYPTION...", "SUCCESS: ACCESS GRANTED"
+                ];
+                for (let i = 0; i < steps.length; i++) {
+                    await new Promise(r => setTimeout(r, 600 + Math.random() * 600));
+                    addLog(steps[i], i === steps.length - 1 ? 'success' : 'info');
+                    setProgress(((i + 1) / steps.length) * 100);
+                }
+                setTimeout(() => setCurrentState(AppState.DASHBOARD), 1000);
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center p-4">
+                    {currentState === AppState.SETUP && (
+                        <div className="w-full max-w-md bg-black/40 backdrop-blur-md border-2 border-emerald-500 neon-border p-8 rounded-lg animate-fade-in text-center z-10">
+                            <h1 className="text-4xl font-bold neon-text mb-6 tracking-tighter">GUILD GLORY</h1>
+                            <div className="space-y-4">
+                                <input 
+                                    type="text" 
+                                    placeholder="GUILD UID"
+                                    className="w-full bg-black border border-emerald-500/50 p-3 rounded text-emerald-400 focus:outline-none focus:border-emerald-400"
+                                    value={guildInfo.uid}
+                                    onChange={(e) => setGuildInfo({...guildInfo, uid: e.target.value})}
+                                />
+                                <select 
+                                    className="w-full bg-black border border-emerald-500/50 p-3 rounded text-emerald-400 focus:outline-none focus:border-emerald-400"
+                                    value={guildInfo.country}
+                                    onChange={(e) => setGuildInfo({...guildInfo, country: e.target.value})}
+                                >
+                                    {["Global", "India", "Pakistan", "Brazil", "Vietnam"].map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                                <button 
+                                    onClick={handleStart}
+                                    className="w-full bg-transparent border-2 border-emerald-500 text-emerald-500 font-bold py-3 uppercase tracking-widest hover:bg-emerald-500 hover:text-black transition-all"
+                                >
+                                    CONNECT
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {currentState === AppState.CONNECTING && (
+                        <div className="w-full max-w-lg space-y-4 animate-fade-in">
+                            <h1 className="text-center text-2xl font-bold neon-text animate-pulse">ESTABLISHING CONNECTION</h1>
+                            <div className="w-full bg-emerald-900/30 h-1 rounded-full overflow-hidden">
+                                <div className="bg-emerald-500 h-full transition-all duration-500 shadow-[0_0_10px_#00ff99]" style={{ width: `${progress}%` }}></div>
+                            </div>
+                            <Terminal logs={logs} />
+                        </div>
+                    )}
+
+                    {currentState === AppState.DASHBOARD && <GuildDashboard guild={guildInfo} />}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
